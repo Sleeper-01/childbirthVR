@@ -1,0 +1,45 @@
+# Unity 生成目录
+[Ll]ibrary/
+[Ll]ibrary_bak*/
+[Tt]emp/
+[Oo]bj/
+[Bb]uild/
+[Bb]uilds/
+[Ll]ogs/
+[Uu]serSettings/
+[Mm]emoryCaptures/
+[Rr]ecordings/
+
+# 不要忽略以下目录
+!/[Aa]ssets/**/*.meta
+
+# IDE
+.vs/
+.idea/
+*.csproj
+*.sln
+*.suo
+*.user
+*.userprefs
+*.pidb
+*.booproj
+*.svd
+*.pdb
+*.mdb
+*.opendb
+*.VC.db
+
+# Unity 崩溃报告
+sysinfo.txt
+*.stackdump
+
+# 打包产物
+*.apk
+*.aab
+*.unitypackage
+
+# 本项目：减面前的模型原件 / 临时工具产物 / 预览页 / 工作区数据
+/_OriginalModels/
+/_Tmp/
+/_Preview/
+/.workbuddy/
