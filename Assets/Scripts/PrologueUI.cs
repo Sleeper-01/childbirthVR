@@ -485,16 +485,31 @@ namespace ChanFangVR
             return img;
         }
 
-        /// 用世界四角拟合 UI 元素的射线命中碰撞体
+        /// <summary>
+        /// 用 UI 元素的尺寸拟合它的射线命中碰撞体。
+        ///
+        /// 坑（曾导致「工具栏按钮怎么点都点不动」）：
+        /// BoxCollider.size 是「本物体的局部单位」，会再乘一次 lossyScale 才变成世界尺寸。
+        /// 以前这里填的是 GetWorldCorners() 算出来的**世界**距离，于是又乘了一遍
+        /// Canvas 的 0.0012 缩放 —— 按钮碰撞体在世界上只有约 0.00017 米（比实际小 800 倍），
+        /// VR 射线和桌面点击都不可能打中。
+        ///
+        /// 正确做法：直接填 rt.rect（Canvas 单位）。它与 BoxCollider 的局部单位是同一套，
+        /// 世界尺寸 = rect.width × lossyScale，正好等于元素真实的世界宽度。
+        /// </summary>
         public static void FitCollider(RectTransform rt, BoxCollider col)
         {
-            Vector3[] c = new Vector3[4];
-            rt.GetWorldCorners(c);
-            Vector3 center = (c[0] + c[2]) * 0.5f;
-            float w = Vector3.Distance(c[0], c[3]);
-            float h = Vector3.Distance(c[0], c[1]);
-            col.center = rt.transform.InverseTransformPoint(center);
-            col.size = new Vector3(Mathf.Max(0.01f, w), Mathf.Max(0.01f, h), 0.02f);
+            float w = rt.rect.width;
+            float h = rt.rect.height;
+            // 布局还没算出来时 rect 可能为 0，退回 sizeDelta（本项目按钮的锚点都是同一点，二者相等）
+            if (w < 0.01f) w = rt.sizeDelta.x;
+            if (h < 0.01f) h = rt.sizeDelta.y;
+
+            // 按钮的 pivot 固定在 (0.5,0.5)，物体原点就是矩形中心，碰撞体无需偏移
+            col.center = Vector3.zero;
+            // 厚度给足：换算到世界约 0.02 米，避免射线斜着打时穿过薄片命中不到
+            float sz = Mathf.Abs(rt.lossyScale.z) > 1e-6f ? Mathf.Abs(rt.lossyScale.z) : 1f;
+            col.size = new Vector3(Mathf.Max(0.01f, w), Mathf.Max(0.01f, h), 0.02f / sz);
         }
     }
 }

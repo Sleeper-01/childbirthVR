@@ -26,6 +26,9 @@ namespace ChanFangVR
         private const float DotHover = 8f;
         private const float ClickDecay = 6f;      // 点击脉冲衰减速度
         private const float LerpHover = 12f;      // 悬停过渡速度
+        // true = 准星一直显示（跟随鼠标）；false = 只在指到可交互物时才冒出来。
+        // 后者更干净：准星本身就是「这个能点」的提示，平时屏幕上不多个东西挡视线。
+        private const bool ShowWhenIdle = false;
 
         private PrologueInput _input;
         private Canvas _canvas;
@@ -61,14 +64,19 @@ namespace ChanFangVR
             _canvas.pixelPerfect = false;
             // 刻意不挂 GraphicRaycaster：本画布只负责显示，不参与任何命中测试
 
-            // 指针根：锚在屏幕左下角、pivot 在自身左下，anchoredPosition 直接就是鼠标像素坐标
-            _root = gameObject.GetComponent<RectTransform>();
-            if (_root == null) _root = gameObject.AddComponent<RectTransform>();
+            // 指针根必须是 Canvas 的「子物体」：
+            // Canvas 自己那个 RectTransform 是画布根，Unity 会把它锁成整屏，
+            // 改它的 anchoredPosition 不起作用，子元素只能按 (0.5,0.5) 锚点停在屏幕正中
+            // —— 表现就是「准星一直卡在中间不跟鼠标走」。
+            var rootGo = new GameObject("PointerRoot");
+            rootGo.transform.SetParent(transform, false);
+            _root = rootGo.AddComponent<RectTransform>();
             _root.anchorMin = Vector2.zero;
             _root.anchorMax = Vector2.zero;
             _root.pivot = Vector2.zero;
             _root.sizeDelta = Vector2.zero;
             _root.anchoredPosition = Vector2.zero;
+            _root.gameObject.SetActive(ShowWhenIdle);
 
             // 圆环（PrologueWorld.RingTex 是现成的环形贴图，这里包成 Sprite 复用）
             var ringTex = PrologueWorld.RingTex;
@@ -133,6 +141,11 @@ namespace ChanFangVR
             // 是否指向可交互物（等价于 VR 射线命中）
             var hovered = _input != null ? _input.Hovered : null;
             bool on = hovered != null;
+
+            // 只在指到东西时露出来；平时隐藏，屏幕上不多个东西挡视线
+            if (_root != null && _root.gameObject.activeSelf != (on || ShowWhenIdle))
+                _root.gameObject.SetActive(on || ShowWhenIdle);
+
             _hoverK = Mathf.MoveTowards(_hoverK, on ? 1f : 0f, Time.unscaledDeltaTime * LerpHover);
 
             // 点击脉冲

@@ -72,6 +72,49 @@ namespace ChanFangVR
             UpdateLeftStick();   // 左摇杆：选项
             UpdateRightStick();  // 右摇杆：摄像头
             UpdateScrollWheel(); // 鼠标滚轮：也当左摇杆用（桌面翻页 / 选卡）
+            if (DesktopInput.GetKeyDown(KeyCode.F4)) DebugDumpHit();
+        }
+
+        /// 调试用：按 F4 打印命中测试细节。点不到按钮时看这些数字就能定位：
+        /// 按钮的屏幕坐标对不对、命中半径是不是小得离谱（碰撞体尺寸算错时会是 0.0x 像素）。
+        private void DebugDumpHit()
+        {
+            var cam = _world != null ? _world.MainCamera : null;
+            var ui = _world != null ? _world.UI : null;
+            Debug.Log(string.Format(
+                "[HIT] vr={0} 相机={1} UI={2} 鼠标={3} 当前命中={4} 屏幕={5}x{6}",
+                VRMode, cam != null ? cam.name : "null", ui != null ? ui.name : "null",
+                DesktopInput.mousePosition, _hover != null ? _hover.Label : "(无)",
+                Screen.width, Screen.height));
+
+            if (_uiButtons == null || cam == null)
+            {
+                Debug.Log("[HIT] 按钮列表尚未缓存或没有相机");
+                return;
+            }
+
+            for (int i = 0; i < _uiButtons.Length; i++)
+            {
+                var btn = _uiButtons[i];
+                if (btn == null) continue;
+                var t = btn.transform;
+                var col = (i < _uiButtonCols.Length) ? _uiButtonCols[i] : null;
+                var center = col != null ? t.TransformPoint(col.center) : t.position;
+                float halfW = 0.078f, halfH = 0.037f;
+                if (col != null)
+                {
+                    var s = t.lossyScale;
+                    halfW = col.size.x * Mathf.Abs(s.x) * 0.5f;
+                    halfH = col.size.y * Mathf.Abs(s.y) * 0.5f;
+                }
+                var sc = cam.WorldToScreenPoint(center);
+                var sx = cam.WorldToScreenPoint(center + cam.transform.right * halfW);
+                var sy = cam.WorldToScreenPoint(center + cam.transform.up * halfH);
+                Debug.Log(string.Format(
+                    "[HIT] 「{0}」可交互={1} 显示={2} 屏幕=({3:F0},{4:F0}) 命中半径=({5:F1},{6:F1})px",
+                    btn.Label, btn.Interactive, t.gameObject.activeInHierarchy,
+                    sc.x, sc.y, Mathf.Abs(sx.x - sc.x), Mathf.Abs(sy.y - sc.y)));
+            }
         }
 
         /// 鼠标滚轮 = 左摇杆：向上/向前滚 = +1（下一页 / 右选），向下滚 = -1。
