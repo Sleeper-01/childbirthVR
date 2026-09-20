@@ -138,6 +138,9 @@ namespace ChanFangVR
             BtnComfort = ToolbarButton.Create(_comfortRoot, "", Vector2.zero,
                 new Vector2(300, 58), ToolbarRole.Comfort);
             BtnComfort.MakeTransparent();
+            // 只改交互物名字（给桌面鼠标准星显示用），不要调 SetLabel()：
+            // 那个会把按钮里的「舒适度：晕动保护 开」整段文字覆盖掉
+            BtnComfort.Label = "舒适度";
             if (_comfortText != null)
             {
                 _comfortText.transform.SetParent(BtnComfort.transform, false);
@@ -201,8 +204,10 @@ namespace ChanFangVR
                 "射线瞄准 → 扣动扳机：确认 / 抓取 / 点击按钮\n" +
                 "左摇杆左右推：翻页 / 在场景卡间选择\n\n" +
                 "【桌面预览（无头显）】\n" +
-                "按住鼠标右键拖动 = 转视角；左键点击 = 扳机\n" +
-                "方向键 ←/→ 或 A/D = 摇杆；C = 视角回正\n\n" +
+                "鼠标移动 = 射线瞄准（屏幕上有准星，指到东西会变大并显示名字）\n" +
+                "左键点击 = 扳机（确认 / 点击按钮）\n" +
+                "鼠标滚轮 = 摇杆（翻页 / 在场景卡间选择）\n" +
+                "按住鼠标右键拖动 = 转视角；方向键 ←/→ 或 A/D = 摇杆；C = 视角回正\n\n" +
                 "【快捷键】\n" +
                 "P = 暂停 / 继续    R = 重播    H = 帮助    V = 切换 VR 模式    M = 切换房间";
             MakeText(panel.transform, body, 28, PrologueDefs.TextMain,

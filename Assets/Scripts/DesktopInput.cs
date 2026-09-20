@@ -48,6 +48,25 @@ namespace ChanFangVR
             }
         }
 
+        /// <summary>
+        /// 鼠标滚轮增量，已归一化成「格数」：向上/向前滚 = +1，向下滚 = -1。
+        /// 新 InputSystem 报的是原始像素增量（一格 = 120），这里除以 120 对齐旧后端的 1 格。
+        /// </summary>
+        public static Vector2 mouseScrollDelta
+        {
+            get
+            {
+#if ENABLE_INPUT_SYSTEM && !ENABLE_LEGACY_INPUT_MANAGER
+                var m = UnityEngine.InputSystem.Mouse.current;
+                if (m == null) return Vector2.zero;
+                var s = m.scroll.ReadValue();
+                return new Vector2(s.x / 120f, s.y / 120f);
+#else
+                return Input.mouseScrollDelta;
+#endif
+            }
+        }
+
         public static bool GetMouseButton(int button)
         {
 #if ENABLE_INPUT_SYSTEM && !ENABLE_LEGACY_INPUT_MANAGER

@@ -30,6 +30,14 @@ namespace ChanFangVR
         private PrologueInteractable _hover;
         private bool _joyLatch;
         private bool _triggerPrev;
+        private DesktopPointer _pointer;
+        private float _scrollAccum;
+
+        /// 当前射线命中的可交互物（桌面鼠标准星据此高亮 / 显示名字）
+        public PrologueInteractable Hovered { get { return _hover; } }
+
+        /// 是否处于 VR 模式（指针据此隐藏）
+        public bool VRMode { get { return _world != null && _world.VRMode; } }
 
         public static PrologueInput Create(PrologueWorld world, PrologueManager manager)
         {
@@ -50,6 +58,9 @@ namespace ChanFangVR
             _handL.SetParent(anchor, false);
             _handR = new GameObject("HandR").transform;
             _handR.SetParent(anchor, false);
+
+            // 桌面鼠标准星：把「VR 的激光笔」在桌面上画出来（VR 模式下会自行隐藏）
+            if (_pointer == null) _pointer = DesktopPointer.Create(this);
         }
 
         private void Update()
@@ -60,6 +71,23 @@ namespace ChanFangVR
             UpdateAim();
             UpdateLeftStick();   // 左摇杆：选项
             UpdateRightStick();  // 右摇杆：摄像头
+            UpdateScrollWheel(); // 鼠标滚轮：也当左摇杆用（桌面翻页 / 选卡）
+        }
+
+        /// 鼠标滚轮 = 左摇杆：向上/向前滚 = +1（下一页 / 右选），向下滚 = -1。
+        /// 一格滚轮算一次，避免一次滚动连发好几下。
+        private void UpdateScrollWheel()
+        {
+            if (_world == null || _world.VRMode || _manager == null) return;
+
+            float d = DesktopInput.mouseScrollDelta.y;
+            if (Mathf.Abs(d) < 0.0001f) return;
+
+            _scrollAccum += d;
+            if (Mathf.Abs(_scrollAccum) < 0.5f) return;
+
+            _manager.OnJoystick(_scrollAccum > 0f ? 1 : -1);
+            _scrollAccum = 0f;
         }
 
         private void UpdateAim()
