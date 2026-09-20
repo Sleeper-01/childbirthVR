@@ -118,6 +118,7 @@ namespace ChanFangVR
         }
 
         private ToolbarButton[] _uiButtons;
+        private BoxCollider[] _uiButtonCols;   // 与 _uiButtons 一一对应，缓存后避免每帧 GetComponent
 
         /// 桌面模式：把工具栏按钮的世界位置投影到屏幕，直接做矩形命中测试。
         /// 不依赖物理射线/图层掩码，因此「暂停/重播/帮助/舒适度」永远可点，
@@ -128,8 +129,13 @@ namespace ChanFangVR
             var ui = _world.UI;
             if (cam == null || ui == null) return null;
 
-            if (_uiButtons == null)
+            if (_uiButtons == null || _uiButtonCols == null || _uiButtonCols.Length != (_uiButtons != null ? _uiButtons.Length : -1))
+            {
                 _uiButtons = ui.GetComponentsInChildren<ToolbarButton>(true);
+                _uiButtonCols = new BoxCollider[_uiButtons.Length];
+                for (int k = 0; k < _uiButtons.Length; k++)
+                    _uiButtonCols[k] = _uiButtons[k] != null ? _uiButtons[k].GetComponent<BoxCollider>() : null;
+            }
 
             var mouse = DesktopInput.mousePosition;
             for (int i = 0; i < _uiButtons.Length; i++)
@@ -139,7 +145,7 @@ namespace ChanFangVR
                 var t = btn.transform;
                 if (!t.gameObject.activeInHierarchy) continue;
 
-                var col = btn.GetComponent<BoxCollider>();
+                var col = _uiButtonCols[i];
                 var center = col != null ? t.TransformPoint(col.center) : t.position;
                 float halfW, halfH;
                 if (col != null)

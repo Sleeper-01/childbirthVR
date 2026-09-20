@@ -3,7 +3,7 @@ using UnityEngine.UI;
 
 namespace ChanFangVR
 {
-    public enum ToolbarRole { Help, Replay, Pause, Comfort }
+    public enum ToolbarRole { Help, Replay, Pause, Comfort, Room }
 
     /// 工具栏 / 面板按钮：射线悬停高亮，扣扳机（或鼠标点击）触发
     public class ToolbarButton : PrologueInteractable

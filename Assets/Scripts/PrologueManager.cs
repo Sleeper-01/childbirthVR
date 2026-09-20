@@ -20,6 +20,12 @@ namespace ChanFangVR
         private int _selectedRoom;
         private bool _helpOn;
         private Coroutine _flow;
+        // 自由换房（转场教学结束后解锁，可反复使用）
+        private bool _roomSwitchUnlocked;
+        private bool _roomSwitching;
+        private Coroutine _roomSwitchCo;
+        // 调试用：L 键跳过。只走键盘，不给玩家暴露按钮。
+        private bool _skipRequested;
 
         public event Action<PrologueStep> StepChanged;
         public event Action StepCompleted;
@@ -49,6 +55,7 @@ namespace ChanFangVR
             };
             _ui.OnReplay = () => Replay();
             _ui.OnPauseToggle = () => TogglePause();
+            _ui.OnRoomSwitch = () => ToggleRoomSwitch();
 
             _world.LightDot.Activated += () => Notify(StepEvent.LightDot);
 
@@ -170,6 +177,7 @@ namespace ChanFangVR
             _selectedRoom = 0;
             _world.ShowSceneCards(true);
             _world.SelectSceneCard(0);
+            _ui.Toast("选择要前往的房间：A/D 或左摇杆切换，点击 / 扣扳机确认");
 
             yield return Say(PrologueDefs.S4_0);
             yield return Say(PrologueDefs.S4_Hint);
@@ -193,6 +201,77 @@ namespace ChanFangVR
 
             _world.ShowSceneCards(false);
             _ui.SetTask(3, 2);
+
+            // 教学结束后解锁自由换房：之后随时可按 M 或点工具栏「换房间」再去别的房间，
+            // 转场不再是一次性的。
+            _roomSwitchUnlocked = true;
+            _ui.Toast("随时可按 M 或点「换房间」再切换房间");
+        }
+
+        // ———— 自由换房（转场教学结束后可反复使用）————
+
+        /// 按 M 键 / 点击工具栏「换房间」调用；再次触发则取消。
+        public void ToggleRoomSwitch()
+        {
+            if (_roomSwitching) { CancelRoomSwitch(); return; }
+            if (!_roomSwitchUnlocked)
+            {
+                _ui.Toast("完成转场教学后即可自由切换房间");
+                return;
+            }
+            _roomSwitchCo = StartCoroutine(RoomSwitch());
+        }
+
+        private IEnumerator RoomSwitch()
+        {
+            _roomSwitching = true;
+            _audio.PlayClick();
+            _selectedRoom = _world.RoomIndex;              // 从当前所在房间开始选
+            _world.ShowSceneCards(true);
+            _world.SelectSceneCard(_selectedRoom);
+            _ui.Toast("选择要前往的房间：A/D 或左摇杆切换，点击 / 回车确认，M 取消");
+
+            // 复用流程里的 WaitFor 机制：只有当前等待 SceneCard 时点击才会被接受
+            yield return WaitFor(StepEvent.SceneCard);
+            _world.ShowSceneCards(false);
+
+            _ui.Vignette(0.85f);
+            _audio.PlayWhoosh();
+            _ui.Fade(Color.black, 1f, 0.45f);
+            yield return WaitSeconds(0.5f, true);
+
+            _world.ApplyRoom(_selectedRoom);
+
+            _ui.Fade(Color.black, 0f, 0.5f);
+            yield return WaitSeconds(0.55f, true);
+            _ui.Vignette(0f);
+
+            _ui.Toast("已前往：" + PrologueDefs.RoomNames[_selectedRoom]);
+            _roomSwitching = false;
+            _roomSwitchCo = null;
+        }
+
+        private void CancelRoomSwitch()
+        {
+            if (_roomSwitchCo != null) StopCoroutine(_roomSwitchCo);
+            _roomSwitchCo = null;
+            // 清掉等待状态，避免之后误触发其它步骤的 Notify
+            _waitingFor = StepEvent.None;
+            _received = StepEvent.None;
+            if (_world != null) _world.ShowSceneCards(false);
+            _roomSwitching = false;
+            _ui.Toast("已取消切换房间");
+        }
+
+        /// 调试用：L 键。跳过当前这一句台词，或把当前等待的交互（校准/抓取/翻页/选卡/暂停）
+        /// 直接当成已完成 —— 连按几次就能快速走完整个序章。
+        /// 只走键盘，不提供 UI 按钮，避免暴露给玩家。
+        public void SkipStep()
+        {
+            _skipRequested = true;
+            _ui.Toast(_waitingFor != StepEvent.None
+                ? "[调试] 跳过等待：" + _waitingFor
+                : "[调试] 跳过当前台词 / 等待");
         }
 
         private IEnumerator ToolbarStep()
@@ -248,6 +327,7 @@ namespace ChanFangVR
             {
                 var ln = lines[i];
                 if (ln == null) continue;
+                _skipRequested = false;      // 按一次 L 只跳过当前这一句，后面的台词照常播放
                 _ui.ShowLine(ln.speaker, ln.text);
                 float voiced = _audio.Speak(ln.voiceKey);
                 float dur = voiced > 0.2f ? voiced + 0.3f : ln.Duration;
@@ -260,6 +340,7 @@ namespace ChanFangVR
             float t = 0f;
             while (t < dur)
             {
+                if (_skipRequested) break;      // 调试：L 键立即结束当前等待（台词/淡入淡出都适用）
                 if (ignorePause || !_ui.Paused) t += Time.unscaledDeltaTime;
                 yield return null;
             }
@@ -269,9 +350,14 @@ namespace ChanFangVR
         {
             _received = StepEvent.None;
             _waitingFor = e;
-            yield return new WaitUntil(() => _received == e);
+            _skipRequested = false;
+            // 调试：L 键把当前这一步的交互要求当成已完成，流程继续往下走
+            yield return new WaitUntil(() => _received == e || _skipRequested);
+            if (_skipRequested && _received != e)
+                _ui.Toast("[调试] 跳过等待：" + e);
             _waitingFor = StepEvent.None;
             _received = StepEvent.None;
+            _skipRequested = false;
         }
 
         /// 交互物/按钮回调统一入口：只有当前正在等待的事件才会被接受
@@ -287,6 +373,7 @@ namespace ChanFangVR
             if (_ui.BtnHelp != null) _ui.BtnHelp.Interactive = on;
             if (_ui.BtnReplay != null) _ui.BtnReplay.Interactive = on;
             if (_ui.BtnPause != null) _ui.BtnPause.Interactive = on;
+            if (_ui.BtnRoom != null) _ui.BtnRoom.Interactive = on;
         }
 
         // ———— 外部输入 ————
@@ -304,12 +391,14 @@ namespace ChanFangVR
                     Notify(StepEvent.Flip);
                 }
             }
-            else if (_step == PrologueStep.Transition)
+            else if (_step == PrologueStep.Transition || _roomSwitching)
             {
                 int max = _world.SceneCards != null ? _world.SceneCards.Length - 1 : 0;
                 _selectedRoom = Mathf.Clamp(_selectedRoom + dir, 0, max);
                 _world.SelectSceneCard(_selectedRoom);
                 _audio.PlayBlip();
+                _ui.Toast(string.Format("已选择：{0}（{1}/{2}）· 点击或扣扳机确认前往",
+                    PrologueDefs.RoomNames[_selectedRoom], _selectedRoom + 1, max + 1));
             }
         }
 
@@ -338,6 +427,11 @@ namespace ChanFangVR
         public void Restart()
         {
             if (_flow != null) StopCoroutine(_flow);
+            // 自由换房状态一并复位：下一次要等转场教学走完才重新解锁
+            if (_roomSwitchCo != null) StopCoroutine(_roomSwitchCo);
+            _roomSwitchCo = null;
+            _roomSwitchUnlocked = false;
+            _roomSwitching = false;
 
             _received = StepEvent.None;
             _waitingFor = StepEvent.None;
@@ -350,7 +444,7 @@ namespace ChanFangVR
             _ui.HelpVisible(false);
             _ui.Banner(false);
             _ui.ToolbarShow(false);
-            _ui.ComfortShow(false);
+            _ui.ComfortShow(true);      // 晕动保护默认开、面板常显，重开后同样保持
             _ui.ResetTasks();
             _ui.ClearLine();
             _ui.Vignette(0f);
@@ -384,8 +478,12 @@ namespace ChanFangVR
                 _audio.PlayClick();
                 _ui.Toast(_world.VRMode ? "已切换到 VR 模式" : "已切换到桌面模式");
             }
-            // 转场选房：回车 / 空格 = 确认当前选中的场景卡（鼠标点不到时的兜底）
-            if (_step == PrologueStep.Transition &&
+            if (DesktopInput.GetKeyDown(KeyCode.M)) ToggleRoomSwitch();
+            if (DesktopInput.GetKeyDown(KeyCode.L)) SkipStep();   // 调试用：只有键盘能触发
+
+            // 转场选房：回车 / 空格 = 确认当前选中的场景卡（鼠标点不到时的兜底）。
+            // 自由换房模式下（_roomSwitching）同样生效。
+            if ((_step == PrologueStep.Transition || _roomSwitching) &&
                 (DesktopInput.GetKeyDown(KeyCode.Return) || DesktopInput.GetKeyDown(KeyCode.Space)))
             {
                 Notify(StepEvent.SceneCard);

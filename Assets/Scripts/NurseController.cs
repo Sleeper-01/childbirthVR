@@ -12,8 +12,15 @@ namespace ChanFangVR
         private const string ModelPath = "Models/Nurse";
         private const float TargetHeight = 1.62f;   // 目标身高（米）
         private const float ModelYaw = 0f;          // 正面修正：若背对玩家改 180
-        // 应急开关：设为 false 则不加载 GLB 护士模型，回退到原来的程序化人形
-        private const bool UseModel = true;
+        // 用 GLB 模型（写实护士）还是程序化人形（胶囊拼的）。
+        // 默认 true = 用模型。Nurse.glb 有 30 万面，弱显卡若仍卡就改 false（回退到几百面的胶囊人形）。
+        // 用 static readonly 而不是 const：const 会让下面的 if 被折叠成不可达代码，刷 CS0162 警告。
+        private static readonly bool UseModel = true;
+
+        /// 站立地面的世界高度。由 PrologueWorld 依据房间地板传入，
+        /// 不设的话护士会按 y=0 贴地，整个身子陷进地板。
+        /// 注意：必须在 Build() 之前赋值，Build 里定位模型时才会用到它。
+        public float GroundY = 0f;
 
         private bool _hasModel;
         private Transform _modelRoot;
@@ -35,13 +42,14 @@ namespace ChanFangVR
         private Vector3 _bodyBasePos;
         private float _breath;
 
-        public static NurseController Create(Transform parent, Vector3 localPos)
+        public static NurseController Create(Transform parent, Vector3 localPos, float groundY = 0f)
         {
             var go = new GameObject("Nurse");
             go.transform.SetParent(parent, false);
             go.transform.localPosition = localPos;
 
             var nurse = go.AddComponent<NurseController>();
+            nurse.GroundY = groundY;      // 必须先于 Build()：Build 里要用它给模型贴地
             nurse.Build();
             return nurse;
         }
@@ -49,7 +57,10 @@ namespace ChanFangVR
         private void Build()
         {
             // 优先用 GLB 护士模型替换程序化人形；模型缺失/未导入时回退到下方程序化搭建
-            if (TryBuildFromModel()) return;
+            bool fromModel = TryBuildFromModel();
+            Debug.Log("[Nurse] 护士来源 = " + (fromModel ? "GLB 模型" : "程序化人形（胶囊）") +
+                      "  (UseModel=" + UseModel + ")");
+            if (fromModel) return;
 
             var skin = new Color(0.96f, 0.83f, 0.73f);
             var uniform = new Color(0.58f, 0.74f, 0.87f);
@@ -113,16 +124,39 @@ namespace ChanFangVR
             var go = Instantiate(prefab, transform, false);
             go.name = "NurseModel";
 
+            // 朝向修正：只能在父空间「叠加」yaw，绝不能整体覆盖 localRotation。
+            // Nurse.glb 的根节点自带一个绕 X 轴 +90° 的旋转（四元数 0.7071,0,0,0.7071），正是它把
+            // Z-up 的模型立起来。直接赋值 localRotation 会把这 90° 抹掉 → 护士变回躺姿，
+            // 且后续按 b.size.y(=0.262) 归一化会被放大 6 倍 → 玩家看到的就是「护士没了」。
+            go.transform.localRotation = Quaternion.Euler(0f, ModelYaw, 0f) * go.transform.localRotation;
+
             var b = Encapsulate(go);
+            // 自适应兜底：若最长轴不是 Y，说明上面那个 +90° 立起旋转没有生效（导入器未应用节点变换），
+            // 这里补一个绕 X 轴 +90°，保证后面是按「身高」而不是按「厚度」归一化。
+            if (b.size.z > b.size.y && b.size.z >= b.size.x)
+            {
+                go.transform.localRotation = Quaternion.Euler(90f, 0f, 0f) * go.transform.localRotation;
+                b = Encapsulate(go);
+            }
             if (b.size.y <= 0.001f) { Object.Destroy(go); return false; }
 
-            // 按身高缩放，再贴地并水平居中到护士站位
+            // 按身高缩放
             float s = TargetHeight / b.size.y;
             go.transform.localScale = Vector3.Scale(go.transform.localScale, Vector3.one * s);
 
             b = Encapsulate(go);
-            go.transform.position += new Vector3(-b.center.x, -b.min.y, -b.center.z);
-            go.transform.localRotation = Quaternion.Euler(0f, ModelYaw, 0f);
+
+            // 贴地 + 水平居中到「护士站位」。
+            // 注意：这里必须对准 transform.position（护士站位），不能对准世界原点——
+            // 否则护士会被搬到房间中心、正好藏进手术床里，看起来也像「护士没了」。
+            Vector3 seat = transform.position;
+            go.transform.position += new Vector3(seat.x - b.center.x,
+                                                 (seat.y + GroundY) - b.min.y,
+                                                 seat.z - b.center.z);
+
+            Debug.Log(string.Format(
+                "[Nurse] 模型已就位：站位={0}  身高={1:F2}m  包围盒 min={2} max={3}  localPos={4}",
+                seat, b.size.y, b.min.ToString("F2"), b.max.ToString("F2"), go.transform.localPosition));
 
             _modelRoot = go.transform;
             _modelBaseRot = go.transform.localRotation;
@@ -208,6 +242,23 @@ namespace ChanFangVR
             dir.y = 0f;
             if (dir.sqrMagnitude < 0.0001f) return;
             transform.rotation = Quaternion.LookRotation(dir);
+        }
+
+        /// 转场到别的房间时把护士挪到新站位（重新贴地 + 转向玩家）。
+        /// localPos 的 y 传「该房间地板高度」，护士脚底会正好落在上面。
+        public void PlaceAt(Vector3 localPos, Vector3 faceWorldTarget)
+        {
+            transform.localPosition = localPos;
+
+            if (_hasModel && _modelRoot != null)
+            {
+                var b = Encapsulate(_modelRoot.gameObject);
+                _modelRoot.position += new Vector3(
+                    transform.position.x - b.center.x,
+                    transform.position.y + GroundY - b.min.y,
+                    transform.position.z - b.center.z);
+            }
+            FaceTo(faceWorldTarget);
         }
 
         public void SetPose(Pose pose)

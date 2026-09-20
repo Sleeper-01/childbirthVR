@@ -11,11 +11,13 @@ namespace ChanFangVR
         public Action OnHelp;
         public Action OnReplay;
         public Action OnPauseToggle;
+        public Action OnRoomSwitch;
 
         public ToolbarButton BtnHelp;
         public ToolbarButton BtnReplay;
         public ToolbarButton BtnPause;
         public ToolbarButton BtnComfort;
+        public ToolbarButton BtnRoom;
 
         public bool Paused { get; set; }
 
@@ -93,18 +95,23 @@ namespace ChanFangVR
                 TextAnchor.UpperLeft, new Vector2(0, -18), new Vector2(880, 80));
 
             // —— 工具栏 ——
+            // 四个按钮：宽度由 130 收到 118、间距 124，整体占 ±245，
+            // 这样加宽后的工具栏（510）仍不会碰到右边的任务卡（左边界 295）。
             var tb = MakeImage(_root, PrologueDefs.Panel, new Vector2(0, _toolbarY),
-                new Vector2(470, 88), PrologueWorld.RoundSprite, true);
+                new Vector2(510, 88), PrologueWorld.RoundSprite, true);
             _toolbar = tb.rectTransform;
-            BtnHelp = ToolbarButton.Create(_toolbar, "帮助", new Vector2(-155, 0),
-                new Vector2(130, 62), ToolbarRole.Help);
-            BtnReplay = ToolbarButton.Create(_toolbar, "重播", new Vector2(0, 0),
-                new Vector2(130, 62), ToolbarRole.Replay);
-            BtnPause = ToolbarButton.Create(_toolbar, "暂停", new Vector2(155, 0),
-                new Vector2(130, 62), ToolbarRole.Pause);
+            BtnHelp = ToolbarButton.Create(_toolbar, "帮助", new Vector2(-186, 0),
+                new Vector2(118, 62), ToolbarRole.Help);
+            BtnReplay = ToolbarButton.Create(_toolbar, "重播", new Vector2(-62, 0),
+                new Vector2(118, 62), ToolbarRole.Replay);
+            BtnPause = ToolbarButton.Create(_toolbar, "暂停", new Vector2(62, 0),
+                new Vector2(118, 62), ToolbarRole.Pause);
+            BtnRoom = ToolbarButton.Create(_toolbar, "换房间", new Vector2(186, 0),
+                new Vector2(118, 62), ToolbarRole.Room);
             BtnHelp.Activated += () => { if (OnHelp != null) OnHelp(); };
             BtnReplay.Activated += () => { if (OnReplay != null) OnReplay(); };
             BtnPause.Activated += () => { if (OnPauseToggle != null) OnPauseToggle(); };
+            BtnRoom.Activated += () => { if (OnRoomSwitch != null) OnRoomSwitch(); };
 
             // —— 任务卡 ——
             var card = MakeImage(_root, PrologueDefs.Panel, new Vector2(445, 235),
@@ -137,7 +144,9 @@ namespace ChanFangVR
                 _comfortText.transform.SetAsLastSibling();
             }
             BtnComfort.Activated += ToggleComfort;
-            _comfortRoot.gameObject.SetActive(false);
+            // 晕动保护默认开启、面板常显：不要求玩家自己去点，一进序章就处于受保护状态，
+            // 转场时的暗角（Vignette）也才会自动生效。玩家仍可点击切换成"关"。
+            _comfortRoot.gameObject.SetActive(true);
 
             // —— 提示 Toast ——
             var toastBg = MakeImage(_root, new Color(0.1f, 0.3f, 0.45f, 0.9f),
@@ -195,7 +204,7 @@ namespace ChanFangVR
                 "按住鼠标右键拖动 = 转视角；左键点击 = 扳机\n" +
                 "方向键 ←/→ 或 A/D = 摇杆；C = 视角回正\n\n" +
                 "【快捷键】\n" +
-                "P = 暂停 / 继续    R = 重播    H = 帮助    V = 切换 VR 模式";
+                "P = 暂停 / 继续    R = 重播    H = 帮助    V = 切换 VR 模式    M = 切换房间";
             MakeText(panel.transform, body, 28, PrologueDefs.TextMain,
                 TextAnchor.UpperLeft, new Vector2(0, -10), new Vector2(800, 380));
             var close = ToolbarButton.Create(panel.transform, "关闭", new Vector2(0, -235),

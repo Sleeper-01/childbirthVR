@@ -88,8 +88,9 @@ namespace ChanFangVR
             c.a = (_selected || _hover) ? 0.98f : 0.82f;
             _bg.color = c;
             if (_title != null) _title.color = _selected ? _roomColor : PrologueDefs.TextMain;
-            if (_hint != null) _hint.text = _selected ? "▶ 扣扳机确认前往" : "扣扳机前往";
-            transform.localScale = _selected ? Vector3.one * 1.12f : Vector3.one;
+            if (_hint != null) _hint.text = _selected ? "✓ 已选中 · 扣扳机确认前往" : "点击选择我";
+            // 选中放大得更明显一些，玩家一眼就能看出当前选的是哪张卡
+            transform.localScale = _selected ? Vector3.one * 1.25f : Vector3.one;
         }
     }
 }

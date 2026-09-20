@@ -12,12 +12,30 @@ namespace ChanFangVR
         private const float BookWidth = PageWidth * 2f;
         private const float BookHeight = PageHeight;
 
+        // —— 书页文字排版（画布像素单位）——
+        // 原来画布只有 260x360 像素贴在 0.26 米宽的书页上，字是糊的；这里把像素密度提到 2 倍，
+        // 物理尺寸不变（localScale 相应减半），文字锐利很多。
+        private const float PageResW = 520f;
+        private const float PageResH = 720f;
+        private const float PadX = 42f;          // 左右内边距
+        private const float PadTop = 36f;        // 顶部内边距
+        private const float PadBottom = 54f;     // 底部内边距（留给页码）
+        private const float HeadHeight = 66f;    // 页眉高度
+        private const int BodyFontSize = 42;     // 正文字号（超出会自动缩到 BodyFitMin，不再溢出书页）
+        private const int BodyFitMin = 28;
+        private const int HeadFontSize = 34;
+        private const int FooterFontSize = 26;
+        private const float BodyLineSpacing = 1.10f;
+        // 页眉/页码用比正文更柔的颜色，做出层次
+        private static readonly Color HeadColor = new Color(0.16f, 0.24f, 0.34f);
+        private static readonly Color FooterColor = new Color(0.46f, 0.51f, 0.57f);
+
         private GameObject _root;
         private GameObject _cover;
         private GameObject _leftPage;
         private GameObject _rightPage;
-        private Text _leftText;
-        private Text _rightText;
+        private PageView _leftText;
+        private PageView _rightText;
 
         private Transform _homeParent;
         private Vector3 _homeLocalPos;
@@ -67,8 +85,8 @@ namespace ChanFangVR
             _leftPage = BuildPage("LeftPage", -PageWidth * 0.5f);
             _rightPage = BuildPage("RightPage", PageWidth * 0.5f);
             // 文字面板挂在书根物体下（不是被缩放的页面立方体下，否则会被页面缩放压成极小导致「空白」）
-            _leftText = BuildText("LeftText", -PageWidth * 0.5f);
-            _rightText = BuildText("RightText", PageWidth * 0.5f);
+            _leftText = BuildPageView("LeftText", -PageWidth * 0.5f);
+            _rightText = BuildPageView("RightText", PageWidth * 0.5f);
 
             Label = "《待产手册》";
         }
@@ -87,11 +105,12 @@ namespace ChanFangVR
             return page;
         }
 
-        // 文字面板：挂在书根（不被页面缩放压扁），置于页面 -Z 侧、比页面更靠前
-        // （z=-0.02 < 页面前表面 -0.004），避免被书页/书壳立方体遮挡导致「空白 / 看不见字」。
+        // 文字面板挂在书根物体下（不是被缩放的页面立方体下，否则会被页面缩放压成极小导致「空白」）
         // 旋转保持 identity：内容面本就在局部 -Z 侧，正对相机；加 180° 反而会看到背面导致字镜像。
-        private Text BuildText(string name, float x)
+        // 每页 = 页眉（取正文首行）+ 正文 + 页码，正文开启 bestFit 且垂直截断，文字再也不会溢出书页。
+        private PageView BuildPageView(string name, float x)
         {
+            var view = new PageView();
             var canvasGo = new GameObject(name + "_Canvas");
             canvasGo.transform.SetParent(_root.transform, false);
             canvasGo.transform.localPosition = new Vector3(x, 0f, -0.02f);
@@ -103,11 +122,74 @@ namespace ChanFangVR
             canvas.renderMode = RenderMode.WorldSpace;
             canvas.pixelPerfect = false;
             var rt = canvasGo.GetComponent<RectTransform>();
-            rt.sizeDelta = new Vector2(PageWidth * 1000f, PageHeight * 1000f);
-            rt.localScale = Vector3.one * 0.001f;
+            rt.sizeDelta = new Vector2(PageResW, PageResH);
+            rt.localScale = Vector3.one * (PageWidth / PageResW);   // 物理宽度仍为 PageWidth
 
-            return PrologueUI.MakeText(rt, "", 26, PrologueDefs.TextDark, TextAnchor.UpperLeft,
-                Vector2.zero, new Vector2(PageWidth * 1000f - 28f, PageHeight * 1000f - 24f));
+            // 页眉：顶部居中
+            view.Head = MakeLabel(rt, "Head", HeadFontSize, HeadColor, TextAnchor.MiddleCenter,
+                new Vector2(PadX, PageResH - PadTop - HeadHeight), new Vector2(-PadX, -PadTop),
+                1f, false, 0);
+            // 正文：页眉下方到页码上方，bestFit + 垂直截断，永不越界
+            view.Body = MakeLabel(rt, "Body", BodyFontSize, PrologueDefs.TextDark, TextAnchor.UpperLeft,
+                new Vector2(PadX, PadBottom), new Vector2(-PadX, -(PadTop + HeadHeight)),
+                BodyLineSpacing, true, BodyFitMin);
+            // 页码：底部居中
+            view.Footer = MakeLabel(rt, "Footer", FooterFontSize, FooterColor, TextAnchor.LowerCenter,
+                new Vector2(PadX, 14f), new Vector2(-PadX, -(PageResH - PadBottom + 6f)),
+                1f, false, 0);
+            return view;
+        }
+
+        private static Text MakeLabel(Transform parent, string name, int size, Color color,
+                                      TextAnchor anchor, Vector2 offsetMin, Vector2 offsetMax,
+                                      float lineSpacing, bool bestFit, int fitMin)
+        {
+            var go = new GameObject(name);
+            var r = go.AddComponent<RectTransform>();
+            r.SetParent(parent, false);
+            r.anchorMin = Vector2.zero;      // 相对页面四边拉伸，用 offset 精确留白
+            r.anchorMax = Vector2.one;
+            r.pivot = new Vector2(0.5f, 0.5f);
+            r.offsetMin = offsetMin;
+            r.offsetMax = offsetMax;
+
+            var t = go.AddComponent<Text>();
+            t.font = PrologueFont.Get();
+            t.fontSize = size;
+            t.color = color;
+            t.alignment = anchor;
+            t.lineSpacing = lineSpacing;
+            t.horizontalOverflow = HorizontalWrapMode.Wrap;
+            // 关键：正文用 Truncate + bestFit，超出就自动缩字号，不会再画到书页外面去
+            t.verticalOverflow = bestFit ? VerticalWrapMode.Truncate : VerticalWrapMode.Overflow;
+            t.resizeTextForBestFit = bestFit;
+            if (bestFit)
+            {
+                t.resizeTextMinSize = fitMin;
+                t.resizeTextMaxSize = size;
+            }
+            t.supportRichText = false;
+            t.raycastTarget = false;
+            return t;
+        }
+
+        /// 一页的三块文字：页眉 / 正文 / 页码
+        private sealed class PageView
+        {
+            public Text Head;
+            public Text Body;
+            public Text Footer;
+
+            public void Set(string head, string body, string footer)
+            {
+                if (Head != null)
+                {
+                    Head.text = head ?? "";
+                    Head.gameObject.SetActive(!string.IsNullOrEmpty(head));
+                }
+                if (Body != null) Body.text = body ?? "";
+                if (Footer != null) Footer.text = footer ?? "";
+            }
         }
 
         public void SetPage(int page)
@@ -130,8 +212,35 @@ namespace ChanFangVR
         {
             int left = _page * 2;
             int right = left + 1;
-            if (_leftText != null) _leftText.text = GetPageText(left);
-            if (_rightText != null) _rightText.text = GetPageText(right);
+            if (_leftText != null) ApplyPageText(_leftText, left);
+            if (_rightText != null) ApplyPageText(_rightText, right);
+        }
+
+        private static void ApplyPageText(PageView view, int idx)
+        {
+            string head, body;
+            SplitHead(GetPageText(idx), out head, out body);
+            view.Set(head, body, "— " + (idx + 1) + " / 6 —");
+        }
+
+        /// 把整页文本拆成「页眉 + 正文」：页眉取首行（并去掉【】），其余作为正文。
+        private static void SplitHead(string raw, out string head, out string body)
+        {
+            head = "";
+            body = raw ?? "";
+            if (string.IsNullOrEmpty(raw)) return;
+
+            int i = raw.IndexOf('\n');
+            if (i < 0) { body = raw; return; }
+
+            string first = raw.Substring(0, i).Trim();
+            string rest = raw.Substring(i).TrimStart('\n').TrimEnd();
+            if (first.Length == 0 || first.Length > 14) { body = raw.Trim(); return; }   // 首行不像标题就整段当正文
+
+            if (first.Length >= 2 && first.StartsWith("【") && first.EndsWith("】"))
+                first = first.Substring(1, first.Length - 2);
+            head = first;
+            body = rest;
         }
 
         private static string GetPageText(int idx)
