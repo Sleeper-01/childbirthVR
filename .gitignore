@@ -9,6 +9,16 @@
 [Uu]serSettings/
 [Mm]emoryCaptures/
 [Rr]ecordings/
+*.bak
+*.zip
+*.log
+
+# Nested source copy used during migration; keep it outside the Git project contents.
+/hebing/
+/\_migration_backup_20260927/
+/\.codely-cli/
+/\.codely.packages/
+/SafeNet Sentinel/
 
 # 不要忽略以下目录
 !/[Aa]ssets/**/*.meta

@@ -1,0 +1,459 @@
+using UnityEngine;
+using UnityEngine.UI;
+using VRHospitalAI;
+using VRHospitalAI.ThirdAct;
+
+[DefaultExecutionOrder(-1000)]
+public class ThirdActAutoBuilder : MonoBehaviour
+{
+    void Start()
+    {
+        BuildAll();
+        Destroy(gameObject);
+    }
+
+    void BuildAll()
+    {
+        var mainCam = new GameObject("Main Camera");
+        mainCam.AddComponent<Camera>();
+        mainCam.AddComponent<AudioListener>();
+        mainCam.AddComponent<SimpleCameraController>();
+        mainCam.transform.position = new Vector3(0, 2.5f, -8);
+        // 相机旋转角度初始值
+        mainCam.transform.rotation = Quaternion.identity;
+
+        var lightGO = new GameObject("Directional Light");
+        var light = lightGO.AddComponent<Light>();
+        light.type = LightType.Directional;
+        light.color = new Color(0.8f, 0.8f, 0.75f);
+        light.intensity = 0.8f;
+        lightGO.transform.rotation = Quaternion.Euler(30f, 45f, 0f);
+
+        // 四面墙（3D 平面）
+        Create3DWalls();
+
+        // 3D 地板
+        var floorGO = Create3DFloor();
+
+        var scoreMgr = new GameObject("ScoreManager");
+        scoreMgr.AddComponent<ScoreManager>();
+
+        var fadeGO = new GameObject("FadeCanvas");
+        fadeGO.AddComponent<CameraFade>();
+
+        var hudGO = new GameObject("ThirdActHUD");
+        var hud = hudGO.AddComponent<ThirdActHUD>();
+        var hudCanvas = CreateCanvas("ThirdActHUD_Canvas");
+        hud.scorePanel = CreatePanel(hudCanvas, "ScorePanel", new Vector2(-Screen.width/2 + 100, Screen.height/2 - 30), new Vector2(150, 40));
+        hud.scoreFill = hud.scorePanel.GetComponent<Image>();
+        hud.scoreFill.fillMethod = Image.FillMethod.Horizontal;
+        hud.scoreFill.fillAmount = 0.6f;
+        hud.scoreText = AddText(hud.scorePanel, "ScoreText", new Vector2(160, 0), "安心值: 60", 18);
+        hud.stepHintPanel = CreatePanel(hudCanvas, "StepHintPanel", new Vector2(0, Screen.height/2 - 100), new Vector2(600, 40));
+        hud.stepHintText = AddText(hud.stepHintPanel, "HintText", new Vector2(0, 0), "", 20);
+        hud.stepHintText.rectTransform.anchorMin = new Vector2(0.5f, 0.5f);
+        hud.stepHintText.rectTransform.anchorMax = new Vector2(0.5f, 0.5f);
+        hud.toolbarPanel = CreatePanel(hudCanvas, "Toolbar", new Vector2(0, -Screen.height/2 + 25), new Vector2(Screen.width, 50));
+        hud.helpButton = AddButton(hud.toolbarPanel, "HelpBtn", new Vector2(10, 5), "帮助");
+        hud.replayButton = AddButton(hud.toolbarPanel, "ReplayBtn", new Vector2(80, 5), "重播");
+        hud.pauseButton = AddButton(hud.toolbarPanel, "PauseBtn", new Vector2(150, 5), "暂停");
+        hud.pauseMenu = CreatePanel(hudCanvas, "PauseMenu", new Vector2(0, 0), new Vector2(Screen.width, Screen.height));
+        hud.pauseMenu.GetComponent<Image>().color = new Color(0, 0, 0, 0.85f);
+        hud.resumeButton = AddButton(hud.pauseMenu, "ResumeBtn", new Vector2(0, 50), "继续");
+        hud.quitButton = AddButton(hud.pauseMenu, "QuitBtn", new Vector2(0, -30), "返回主菜单");
+        hud.helpPanel = CreatePanel(hudCanvas, "HelpPanel", new Vector2(0, 0), new Vector2(400, 200));
+        hud.helpPanel.GetComponent<Image>().color = new Color(0.1f, 0.1f, 0.1f, 0.95f);
+        hud.helpContentText = AddText(hud.helpPanel, "HelpText", new Vector2(0, 0), "射线点击选项即可作答。", 16);
+        hud.helpContentText.rectTransform.anchorMin = new Vector2(0.5f, 0.5f);
+        hud.helpContentText.rectTransform.anchorMax = new Vector2(0.5f, 0.5f);
+        hud.helpContentText.alignment = TextAnchor.MiddleCenter;
+
+        var controllerGO = new GameObject("ThirdActController");
+        var controller = controllerGO.AddComponent<ThirdActController>();
+        controller.scoreManager = FindObjectOfType<ScoreManager>();
+        controller.cameraFade = FindObjectOfType<CameraFade>();
+        controller.hud = hud;
+
+        var drugGO = new GameObject("DrugPainModule");
+        var drug = drugGO.AddComponent<DrugPainModule>();
+        drug.scoreManager = FindObjectOfType<ScoreManager>();
+        drug.cameraFade = FindObjectOfType<CameraFade>();
+        BuildDrugPainUI(drug);
+
+        var breatheGO = new GameObject("BreathingModule");
+        var breathe = breatheGO.AddComponent<BreathingModule>();
+        breathe.scoreManager = FindObjectOfType<ScoreManager>();
+        breathe.cameraFade = FindObjectOfType<CameraFade>();
+        BuildBreathingUI(breathe);
+
+        var toolboxGO = new GameObject("ToolboxModule");
+        var toolbox = toolboxGO.AddComponent<ToolboxModule>();
+        toolbox.scoreManager = FindObjectOfType<ScoreManager>();
+        toolbox.cameraFade = FindObjectOfType<CameraFade>();
+        toolbox.hud = hud;
+        BuildToolboxUI(toolbox);
+
+        controller.drugModule = drug;
+        controller.breathingModule = breathe;
+        controller.toolboxModule = toolbox;
+
+        // 简易医生模型（胶囊）
+        var doctorGO = new GameObject("Doctor");
+        doctorGO.transform.position = new Vector3(0, 0.9f, -6);
+        var doctorCapsule = doctorGO.AddComponent<CapsuleCollider>();
+        doctorCapsule.direction = 1; // Y轴
+        doctorCapsule.radius = 0.4f;
+        doctorCapsule.height = 1.8f;
+        var doctorMesh = doctorGO.AddComponent<MeshFilter>();
+        var doctorMeshRenderer = doctorGO.AddComponent<MeshRenderer>();
+        var doctorMat = new Material(Shader.Find("Standard"));
+        doctorMat.color = new Color(0.9f, 0.95f, 1f); // 浅蓝色医生袍
+        doctorMeshRenderer.sharedMaterial = doctorMat;
+        // 医生头部（球体）
+        var headGO = new GameObject("Head");
+        headGO.transform.SetParent(doctorGO.transform, false);
+        headGO.transform.position = new Vector3(0, 0.9f, 0);
+        var headSphere = headGO.AddComponent<SphereCollider>();
+        headSphere.radius = 0.25f;
+        var headMesh = headGO.AddComponent<MeshFilter>();
+        var headRenderer = headGO.AddComponent<MeshRenderer>();
+        var headMat = new Material(Shader.Find("Standard"));
+        headMat.color = new Color(1f, 0.85f, 0.7f); // 肤色
+        headRenderer.sharedMaterial = headMat;
+
+        var npcGO = new GameObject("Anesthesiologist");
+        npcGO.AddComponent<NPCBehaviour>();
+        var npc = npcGO.GetComponent<NPCBehaviour>();
+        npc.npcId = "anesthesiologist";
+        npc.displayName = "王医生";
+        drug.anesthesiologistNPC = npc;
+
+        Debug.Log("[第三幕] 场景搭建完成！请按 Ctrl+S 保存场景。");
+    }
+
+    Canvas CreateCanvas(string name)
+    {
+        var go = new GameObject(name);
+        var canvas = go.AddComponent<Canvas>();
+        canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+        canvas.sortingOrder = 1000; // 确保在最前面
+        canvas.pixelPerfect = true;
+        var scaler = go.AddComponent<CanvasScaler>();
+        scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+        scaler.referenceResolution = new Vector2(1920, 1080);
+        scaler.matchWidthOrHeight = 1f;
+        go.AddComponent<GraphicRaycaster>();
+        return canvas;
+    }
+
+    GameObject CreatePanel(Canvas canvas, string name, Vector2 pos, Vector2? size = null)
+    {
+        var go = new GameObject(name);
+        go.transform.SetParent(canvas.transform, false);
+        var rect = go.AddComponent<RectTransform>();
+        rect.anchorMin = new Vector2(0.5f, 0.5f);
+        rect.anchorMax = new Vector2(0.5f, 0.5f);
+        rect.pivot = new Vector2(0.5f, 0.5f);
+        rect.anchoredPosition = pos;
+        rect.sizeDelta = size ?? new Vector2(200, 50);
+        var img = go.AddComponent<Image>();
+        img.color = new Color(0.1f, 0.1f, 0.1f, 0.85f);
+        return go;
+    }
+
+    GameObject CreatePanel(GameObject parent, string name, Vector2 pos, Vector2 size)
+    {
+        var go = new GameObject(name);
+        go.transform.SetParent(parent.transform, false);
+        var rect = go.AddComponent<RectTransform>();
+        rect.anchorMin = new Vector2(0.5f, 0.5f);
+        rect.anchorMax = new Vector2(0.5f, 0.5f);
+        rect.pivot = new Vector2(0.5f, 0.5f);
+        rect.anchoredPosition = pos;
+        rect.sizeDelta = size;
+        var img = go.AddComponent<Image>();
+        img.color = new Color(0.1f, 0.1f, 0.1f, 0.85f);
+        return go;
+    }
+
+    UnityEngine.UI.Text AddText(GameObject parent, string name, Vector2 pos, string content = "", int fontSize = 36, Color? color = null)
+    {
+        var go = new GameObject(name);
+        go.transform.SetParent(parent.transform, false);
+        var rect = go.AddComponent<RectTransform>();
+        rect.anchorMin = new Vector2(0.5f, 0.5f);
+        rect.anchorMax = new Vector2(0.5f, 0.5f);
+        rect.pivot = new Vector2(0.5f, 0.5f);
+        rect.anchoredPosition = pos;
+        rect.sizeDelta = new Vector2(700, 60);
+        var text = go.AddComponent<UnityEngine.UI.Text>();
+        text.text = content;
+        text.fontSize = Mathf.Max(fontSize, 36);
+        text.color = color ?? Color.white;
+        text.alignment = TextAnchor.MiddleCenter;
+        text.horizontalOverflow = HorizontalWrapMode.Overflow;
+        var font = Resources.Load<UnityEngine.Font>("Fonts/simhei");
+        if (font != null) text.font = font;
+        return text;
+    }
+
+    Button AddButton(GameObject parent, string name, Vector2 pos, string label)
+    {
+        var go = new GameObject(name);
+        go.transform.SetParent(parent.transform, false);
+        var rect = go.AddComponent<RectTransform>();
+        rect.anchorMin = new Vector2(0.5f, 0.5f);
+        rect.anchorMax = new Vector2(0.5f, 0.5f);
+        rect.pivot = new Vector2(0.5f, 0.5f);
+        rect.anchoredPosition = pos;
+        rect.sizeDelta = new Vector2(120, 36);
+        var img = go.AddComponent<Image>();
+        img.color = new Color(0.2f, 0.4f, 0.8f, 0.8f);
+        var btn = go.AddComponent<Button>();
+        var textGO = new GameObject("Text");
+        textGO.transform.SetParent(go.transform, false);
+        var textRect = textGO.AddComponent<RectTransform>();
+        textRect.anchorMin = Vector2.zero;
+        textRect.anchorMax = Vector2.one;
+        var text = textGO.AddComponent<UnityEngine.UI.Text>();
+        text.text = label;
+        text.fontSize = 44;
+        text.color = Color.white;
+        text.alignment = TextAnchor.MiddleCenter;
+        text.horizontalOverflow = HorizontalWrapMode.Overflow;
+        var font = Resources.Load<UnityEngine.Font>("Fonts/simhei");
+        if (font != null) text.font = font;
+        return btn;
+    }
+
+    Button AddButtonLarge(GameObject parent, string name, Vector2 pos, string label, int fontSize = 24)
+    {
+        var btn = AddButton(parent, name, pos, label);
+        var rect = btn.GetComponent<RectTransform>();
+        rect.sizeDelta = new Vector2(250, 60);
+        var textGO = btn.transform.Find("Text");
+        if (textGO != null)
+        {
+            var text = textGO.GetComponent<UnityEngine.UI.Text>();
+            if (text != null) text.fontSize = Mathf.Max(fontSize, 36);
+        }
+        return btn;
+    }
+
+    void BuildDrugPainUI(DrugPainModule drug)
+    {
+        var canvas = CreateCanvas("ExplanationCanvas");
+        var explPanel = CreatePanel(canvas, "ExplanationPanel", new Vector2(0, 0), new Vector2(900, 400));
+        drug.explanationPanel = explPanel;
+        drug.explanationTitle = AddText(explPanel, "Title", new Vector2(0, 150), "title", 24, new Color(1f, 0.8f, 0.2f));
+        drug.explanationBody = AddText(explPanel, "Body", new Vector2(0, 80), "body", 16);
+        drug.btnNextCard = AddButton(explPanel, "NextCard", new Vector2(-200, -150), "下一张");
+        drug.btnCloseCard = AddButton(explPanel, "CloseCard", new Vector2(200, -150), "结束讲解");
+        drug.btnStartVideo = AddButtonLarge(explPanel, "StartVideo", new Vector2(0, -180), "确  定", 30);
+
+        var quizPanel = CreatePanel(canvas, "PositionQuizPanel", new Vector2(0, 0), new Vector2(900, 400));
+        drug.positionQuizPanel = quizPanel;
+        drug.feedbackText = AddText(quizPanel, "QuestionText", new Vector2(0, 160), "题目", 20, new Color(1f, 0.8f, 0.2f));
+        for (int i = 0; i < 3; i++)
+            drug.positionQuizButtons[i] = AddButton(quizPanel, $"Option{i}", new Vector2(0, 80 - i * 70), $"选项{i + 1}");
+
+        var conPanel = CreatePanel(canvas, "ContractionPanel", new Vector2(0, 0), new Vector2(900, 280));
+        drug.contractionPanel = conPanel;
+        drug.contractionIntensityText = AddText(conPanel, "IntensityText", new Vector2(0, 150), "等待宫缩预警...", 18, Color.red);
+        var barGO = new GameObject("IntensityBar");
+        barGO.transform.SetParent(conPanel.transform, false);
+        var barRect = barGO.AddComponent<RectTransform>();
+        barRect.anchorMin = new Vector2(0.5f, 0.5f);
+        barRect.anchorMax = new Vector2(0.5f, 0.5f);
+        barRect.pivot = new Vector2(0.5f, 0.5f);
+        barRect.anchoredPosition = new Vector2(0, 60);
+        barRect.sizeDelta = new Vector2(500, 20);
+        var barImg = barGO.AddComponent<Image>();
+        barImg.color = Color.red;
+        barImg.type = Image.Type.Filled;
+        barImg.fillMethod = Image.FillMethod.Horizontal;
+        barImg.fillAmount = 0f;
+        drug.contractionBar = barImg;
+        drug.callNurseButton = AddButton(conPanel, "CallNurse", new Vector2(0, -100), "呼叫护士");
+        string[] cardTexts = { "宫缩来了，有点疼", "我准备好用力了", "我需要镇痛药", "我很紧张，请陪陪我" };
+        for (int i = 0; i < 4; i++)
+            drug.voiceCards[i] = AddButton(conPanel, $"VoiceCard{i}", new Vector2(-250 + i * 130, -140), cardTexts[i]);
+    }
+
+    void BuildBreathingUI(BreathingModule breathe)
+    {
+        var canvas = CreateCanvas("BreathingCanvas");
+        var breathPanel = CreatePanel(canvas, "BreathingPanel", new Vector2(0, 0), new Vector2(800, 600));
+        breathe.breathingPanel = breathPanel;
+        var sphereGO = new GameObject("BreatheSphere");
+        sphereGO.transform.SetParent(breathPanel.transform, false);
+        var sphereRect = sphereGO.AddComponent<RectTransform>();
+        sphereRect.anchorMin = new Vector2(0.5f, 0.5f);
+        sphereRect.anchorMax = new Vector2(0.5f, 0.5f);
+        sphereRect.pivot = new Vector2(0.5f, 0.5f);
+        sphereRect.sizeDelta = new Vector2(200, 200);
+        sphereRect.anchoredPosition = Vector2.zero;
+        var sphereImg = sphereGO.AddComponent<Image>();
+        sphereImg.color = new Color(0.3f, 0.6f, 1f, 0.6f);
+        sphereImg.type = Image.Type.Filled;
+        sphereImg.fillMethod = Image.FillMethod.Radial360;
+        sphereImg.fillOrigin = 0;
+        sphereImg.fillAmount = 0.5f;
+        breathe.breatheSphere = sphereImg;
+        breathe.breatheText = AddText(breathPanel, "BreatheText", new Vector2(0, -150), "跟随光球呼吸", 28);
+        breathe.matchPercentText = AddText(breathPanel, "MatchText", new Vector2(0, -200), "吻合度: ○", 20, Color.cyan);
+
+        var musicPanel = CreatePanel(canvas, "MusicPanel", new Vector2(0, 0), new Vector2(700, 500));
+        breathe.musicPanel = musicPanel;
+        AddText(musicPanel, "MusicTitle", new Vector2(0, 200), "选择音乐与场景", 24, new Color(1f, 0.8f, 0.2f));
+        string[] musicNames = { "海浪轻拍", "森林鸟鸣", "钢琴抒情", "自然白噪音" };
+        for (int i = 0; i < 4; i++)
+            breathe.musicButtons[i] = AddButton(musicPanel, $"Music{i}", new Vector2(-200, 120 - i * 55), musicNames[i]);
+        string[] sceneNames = { "海边日落", "森林小径", "山间溪流", "花园秋千" };
+        for (int i = 0; i < 4; i++)
+            breathe.sceneButtons[i] = AddButton(musicPanel, $"Scene{i}", new Vector2(50, 120 - i * 55), sceneNames[i]);
+
+        var massagePanel = CreatePanel(canvas, "MassagePanel", new Vector2(0, 0), new Vector2(700, 250));
+        breathe.massagePanel = massagePanel;
+        AddText(massagePanel, "MassageTitle", new Vector2(0, 150), "选择按摩力度", 24, new Color(1f, 0.8f, 0.2f));
+        string[] pressureNames = { "轻柔", "适中", "稍重" };
+        for (int i = 0; i < 3; i++)
+            breathe.pressureButtons[i] = AddButton(massagePanel, $"Pressure{i}", new Vector2(-150 + i * 150, -100), pressureNames[i]);
+        breathe.massageTipText = AddText(massagePanel, "MassageTip", new Vector2(0, 50), "", 16);
+
+        var posPanel = CreatePanel(canvas, "PositionPanel", new Vector2(0, 0), new Vector2(700, 250));
+        breathe.positionPanel = posPanel;
+        breathe.positionCardTitle = AddText(posPanel, "PosTitle", new Vector2(0, 180), "title", 24, new Color(1f, 0.8f, 0.2f));
+        breathe.positionCardDesc = AddText(posPanel, "PosDesc", new Vector2(0, -150), "desc", 16);
+        string[] posNames = { "左倾卧位", "半卧位", "屈膝垫枕位" };
+        for (int i = 0; i < 3; i++)
+            breathe.positionCardButtons[i] = AddButton(posPanel, $"PosCard{i}", new Vector2(-200 + i * 150, -220), posNames[i]);
+    }
+
+    void BuildToolboxUI(ToolboxModule toolbox)
+    {
+        var canvas = CreateCanvas("ToolboxCanvas");
+        var tbPanel = CreatePanel(canvas, "ToolboxPanel", new Vector2(0, 0), new Vector2(800, 450));
+        toolbox.toolboxPanel = tbPanel;
+        AddText(tbPanel, "ToolTitle", new Vector2(0, 180), "选择镇痛法宝放入待产包（1-2件）", 20, new Color(1f, 0.8f, 0.2f));
+        string[] toolNames = { "呼吸卡", "分娩球", "镇痛泵", "按摩手", "音乐盒" };
+        for (int i = 0; i < 5; i++)
+            toolbox.toolButtons[i] = AddButton(tbPanel, $"Tool{i}", new Vector2(-260 + i * 130, -150), toolNames[i]);
+
+        var bagPanel = CreatePanel(canvas, "BaggagePanel", new Vector2(280, -180), new Vector2(200, 80));
+        toolbox.baggagePanel = bagPanel;
+        toolbox.baggageCountText = AddText(bagPanel, "BagCount", new Vector2(0, 0), "0/2", 18, Color.cyan);
+        for (int i = 0; i < 2; i++)
+        {
+            var slot = new GameObject($"BagSlot{i}");
+            slot.transform.SetParent(bagPanel.transform, false);
+            var slotRect = slot.AddComponent<RectTransform>();
+            slotRect.anchorMin = new Vector2(0.5f, 0.5f);
+            slotRect.anchorMax = new Vector2(0.5f, 0.5f);
+            slotRect.pivot = new Vector2(0.5f, 0.5f);
+            slotRect.anchoredPosition = new Vector2(-50 + i * 100, 0);
+            slotRect.sizeDelta = new Vector2(60, 60);
+            var slotImg = slot.AddComponent<Image>();
+            slotImg.color = new Color(0.3f, 0.3f, 0.3f, 0.5f);
+            toolbox.baggageSlots[i] = slot;
+        }
+
+        var qPanel = CreatePanel(canvas, "QuestionPanel", new Vector2(0, 0), new Vector2(700, 500));
+        toolbox.questionPanel = qPanel;
+        toolbox.questionText = AddText(qPanel, "QuestionText", new Vector2(0, 200), "问题", 20, new Color(1f, 0.8f, 0.2f));
+        toolbox.responseText = AddText(qPanel, "ResponseText", new Vector2(0, -180), "护士回应", 16, Color.green);
+        string[] answers = { "呼吸法我最有把握", "镇痛泵听起来最安心", "音乐和按摩能让我放松", "想都试试多一种选择", "还没想好" };
+        for (int i = 0; i < 5; i++)
+            toolbox.answerButtons[i] = AddButton(qPanel, $"Answer{i}", new Vector2(0, -100 - i * 50), answers[i]);
+    }
+
+    // 创建墙壁
+    void CreateWall(string name, Vector3 position, Vector2 size, Color color)
+    {
+        var wallGO = new GameObject(name);
+        wallGO.transform.position = position;
+        var rect = wallGO.AddComponent<RectTransform>();
+        rect.sizeDelta = size;
+        var img = wallGO.AddComponent<Image>();
+        img.color = color;
+        var canvas = wallGO.AddComponent<Canvas>();
+        canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+        canvas.sortingOrder = 1000;
+    }
+
+    // 创建 3D 四面墙
+    void Create3DWalls()
+    {
+        // 前墙
+        var frontWall = CreateWall3D(new Vector3(0, 2.5f, -12f), new Vector2(24f, 5f), new Color(0.9f, 0.85f, 0.8f));
+        // 后墙
+        var backWall = CreateWall3D(new Vector3(0, 2f, 0f), new Vector2(20f, 4f), new Color(0.9f, 0.85f, 0.8f));
+        backWall.transform.rotation = Quaternion.Euler(0f, 180f, 0f);
+        // 左墙
+        var leftWall = CreateWall3D(new Vector3(-12f, 2.5f, -6f), new Vector2(14f, 5f), new Color(0.85f, 0.85f, 0.8f));
+        leftWall.transform.rotation = Quaternion.Euler(0f, 90f, 0f);
+        // 右墙
+        var rightWall = CreateWall3D(new Vector3(12f, 2.5f, -6f), new Vector2(14f, 5f), new Color(0.85f, 0.85f, 0.8f));
+        rightWall.transform.rotation = Quaternion.Euler(0f, -90f, 0f);
+    }
+
+    // 创建 3D 墙壁（平面）
+    GameObject CreateWall3D(Vector3 position, Vector2 size, Color color)
+    {
+        var wallGO = new GameObject("Wall");
+        wallGO.transform.position = position;
+        var meshFilter = wallGO.AddComponent<MeshFilter>();
+        var meshRenderer = wallGO.AddComponent<MeshRenderer>();
+        var mesh = new Mesh();
+        mesh.vertices = new Vector3[] {
+            new Vector3(-size.x/2, -size.y/2, 0),
+            new Vector3(size.x/2, -size.y/2, 0),
+            new Vector3(size.x/2, size.y/2, 0),
+            new Vector3(-size.x/2, size.y/2, 0)
+        };
+        mesh.triangles = new int[] { 0, 1, 2, 0, 2, 3 };
+        mesh.uv = new Vector2[] {
+            new Vector2(0, 0),
+            new Vector2(1, 0),
+            new Vector2(1, 1),
+            new Vector2(0, 1)
+        };
+        mesh.RecalculateNormals();
+        meshFilter.sharedMesh = mesh;
+        var mat = new Material(Shader.Find("Standard"));
+        mat.color = color;
+        meshRenderer.sharedMaterial = mat;
+        return wallGO;
+    }
+
+    // 创建 3D 地板
+    GameObject Create3DFloor()
+    {
+        var floorGO = new GameObject("Floor");
+        floorGO.transform.position = new Vector3(0, 0, -6);
+        floorGO.transform.rotation = Quaternion.Euler(90f, 0f, 0f);
+        var meshFilter = floorGO.AddComponent<MeshFilter>();
+        var meshRenderer = floorGO.AddComponent<MeshRenderer>();
+        var mesh = new Mesh();
+        float size = 20f;
+        mesh.vertices = new Vector3[] {
+            new Vector3(-size, 0, -size),
+            new Vector3(size, 0, -size),
+            new Vector3(size, 0, size),
+            new Vector3(-size, 0, size)
+        };
+        mesh.triangles = new int[] { 0, 1, 2, 0, 2, 3 };
+        mesh.uv = new Vector2[] {
+            new Vector2(0, 0),
+            new Vector2(2, 0),
+            new Vector2(2, 2),
+            new Vector2(0, 2)
+        };
+        mesh.RecalculateNormals();
+        meshFilter.sharedMesh = mesh;
+        var mat = new Material(Shader.Find("Standard"));
+        mat.color = new Color(0.7f, 0.65f, 0.6f);
+        meshRenderer.sharedMaterial = mat;
+        return floorGO;
+    }
+}
